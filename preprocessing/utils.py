@@ -90,8 +90,13 @@ def write_video_ffmpeg(rois, target_path, ffmpeg,fps=25):
     decimals = 10
     #fps = 25
     tmp_dir = tempfile.mkdtemp()
+    num_rois = 0
     for i_roi, roi in enumerate(rois):
         cv2.imwrite(os.path.join(tmp_dir, str(i_roi).zfill(decimals)+'.png'), roi)
+        num_rois += 1
+    if num_rois == 0:
+        shutil.rmtree(tmp_dir)
+        return False
     list_fn = os.path.join(tmp_dir, "list")
     with open(list_fn, 'w') as fo:
         fo.write("file " + "'" + tmp_dir+'/%0'+str(decimals)+'d.png' + "'\n")
@@ -103,7 +108,7 @@ def write_video_ffmpeg(rois, target_path, ffmpeg,fps=25):
     pipe = subprocess.run(cmd, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
     # rm tmp dir
     shutil.rmtree(tmp_dir)
-    return
+    return pipe.returncode == 0
 
 
 
@@ -126,7 +131,6 @@ def crop_patch(video_pathname, landmarks, mean_face_landmarks, stablePntsIDs, ST
             break
         if frame_idx == 0:
             q_frame, q_landmarks = deque(), deque()
-            sequence = []
 
         q_landmarks.append(landmarks[frame_idx])
         q_frame.append(frame)
@@ -141,10 +145,10 @@ def crop_patch(video_pathname, landmarks, mean_face_landmarks, stablePntsIDs, ST
                                            STD_SIZE)
             trans_landmarks = trans(cur_landmarks)
             # -- crop mouth patch
-            sequence.append( cut_patch( trans_frame,
-                                        trans_landmarks[start_idx:stop_idx],
-                                        crop_height//2,
-                                        crop_width//2,))
+            yield cut_patch( trans_frame,
+                             trans_landmarks[start_idx:stop_idx],
+                             crop_height//2,
+                             crop_width//2,)
         if frame_idx == len(landmarks)-1:
         #if (frame_idx == len(landmarks)-1) or (frame_idx == len(landmarks)-2):
             while q_frame:
@@ -154,13 +158,13 @@ def crop_patch(video_pathname, landmarks, mean_face_landmarks, stablePntsIDs, ST
                 # -- transform landmarks
                 trans_landmarks = trans(q_landmarks.popleft())
                 # -- crop mouth patch
-                sequence.append( cut_patch( trans_frame,
-                                            trans_landmarks[start_idx:stop_idx],
-                                            crop_height//2,
-                                            crop_width//2,))
-            return np.array(sequence)
+                yield cut_patch( trans_frame,
+                                 trans_landmarks[start_idx:stop_idx],
+                                 crop_height//2,
+                                 crop_width//2,)
+            return
         frame_idx += 1
-    return None
+    return
 
 
 def landmarks_interpolate(landmarks):
