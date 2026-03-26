@@ -4,16 +4,22 @@ This is a PyTorch implementation of [SpeechForensics: Audio-Visual Speech Repres
 ![Model_Overview](docs/images/method.png)
 ## Setup
 ### Prerequisite
-1. `pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 -f https://download.pytorch.org/whl/torch_stable.html`
+1. Install Python 3.10 and create a virtual environment named `.venv`.
+   ```bash
+   python3.10 -m venv .venv
+   source .venv/bin/activate
+   python -m pip install --upgrade pip
+   ```
+2. `pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 -f https://download.pytorch.org/whl/torch_stable.html`
    (Choose the suitable version for your machine.)
-2. Clone this repository.
-3. Install dependency packages via `pip install -r requirements.txt`.
-4. Install AV-HuBert and face-alignment
+3. Clone this repository.
+4. Install dependency packages via `pip install -r requirements.txt`.
+5. Install AV-HuBert and face-alignment
    ```bash
    git submodule init
    git submodule update
    ```
-5. Install Fairseq
+6. Install Fairseq
    ```
    cd av_hubert
    git submodule init
@@ -21,8 +27,8 @@ This is a PyTorch implementation of [SpeechForensics: Audio-Visual Speech Repres
    cd fairseq
    pip install --editable ./
    ```
-6. Install FFmpeg. We use version=4.2.2.
-7. Put the `modification/retinaface` in `preprocessing/face-alignment/face_alignment/detection`
+7. Install FFmpeg. We use version=4.2.2.
+8. Put the `modification/retinaface` in `preprocessing/face-alignment/face_alignment/detection`
    ```bash
    cp -r modification/retinaface preprocessing/face-alignment/face_alignment/detection
    ```
@@ -60,7 +66,7 @@ This is a PyTorch implementation of [SpeechForensics: Audio-Visual Speech Repres
       where `categories` includes `original_videos`, `audio-driven`, `dffs`, `dfl` and `fo` (The videos we downloaded in `fsgan` do not contain audio,
       so we couldn't test them).
       The test videos we used in our experiments are given in `data/datasets/KoDF/test_list.txt`
-4. Detect the faces and extract 68 face landmarks. Download the [RetinaFace](https://drive.google.com/open?id=1oZRSG0ZegbVkVwUd8wUIQx8W7yfZ_ki1) pretrained model,
+3. Detect the faces and extract 68 face landmarks. Download the [RetinaFace](https://drive.google.com/open?id=1oZRSG0ZegbVkVwUd8wUIQx8W7yfZ_ki1) pretrained model,
    and put it to `checkpoints/Resnet50_Final.pth`. Run
    ```bash
    python preprocessing/face-alignment/landmark_extract.py --video_root $video_root --file_list $file_list --out_dir $out_dir
@@ -68,7 +74,7 @@ This is a PyTorch implementation of [SpeechForensics: Audio-Visual Speech Repres
    - $video_root: root directory of videos.
    - $file_list: a txt file containing names of videos. We provide the filelists in the `data/datasets/` directory.
    - $out_dir: directory for saving landmarks.
-5. To crop the mouth region from each video, run
+4. To crop the mouth region from each video, run
    ```bash
    python preprocessing/align_mouth.py --video_root $video_root --file_list $file_list --landmarks_dir $landmarks_dir --out_dir $out_dir
    ```
