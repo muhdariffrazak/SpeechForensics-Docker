@@ -76,7 +76,7 @@ This is a PyTorch implementation of [SpeechForensics: Audio-Visual Speech Repres
    - $out_dir: directory for saving landmarks.
 4. To crop the mouth region from each video, run
    ```bash
-   python preprocessing/align_mouth.py --video_root $video_root --file_list $file_list --landmarks_dir $landmarks_dir --out_dir $out_dir
+   python preprocessing/align_mouth.py --video_root $video_root --file_list $file_list --landmark_dir $landmarks_dir --out_dir $out_dir
    ```
    - $out_dir: directory for saving cropped mouth videos.
 
