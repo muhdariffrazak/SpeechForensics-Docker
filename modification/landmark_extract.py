@@ -29,26 +29,22 @@ def detect_save_landmark_68(args):
         if osp.exists(out_path):
             continue
 
-        frames=[]
+        landmarks = {}
         cap=cv2.VideoCapture(video_path)
+        frame_idx = 0
         while cap.isOpened():
             ret, frame=cap.read()
             if not ret:
                 break
-            frames.append(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB))
-        cap.release()
-
-        frames=np.asarray(frames)
-
-        landmarks = {}
-        for i in range(len(frames)):
-            frame=frames[i]
+            frame = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
             landmark = fa.get_landmarks(frame)
             if (landmark!=None) and (len(landmark)!=0):
                 landmark=landmark[0]
                 landmark=landmark.tolist()
-            img_name='%04d.jpg'%i
+            img_name='%04d.jpg'%frame_idx
             landmarks[img_name]=landmark
+            frame_idx += 1
+        cap.release()
 
         open_mode='w' if os.path.exists(out_path) else 'x'
         with open(out_path,open_mode) as f:

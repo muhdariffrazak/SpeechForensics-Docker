@@ -7,22 +7,27 @@ from tqdm import tqdm
 import os
 import os.path as osp
 import sys
+import importlib
 from base64 import b64encode
 import tempfile
 from argparse import Namespace
-import utils as avhubert_utils
 from av_hubert.fairseq.fairseq import checkpoint_utils, options, tasks
 import av_hubert.fairseq.fairseq.utils as fairseq_utils
 from av_hubert.fairseq.fairseq.dataclass.configs import GenerationConfig
 from glob import glob
 from scipy.io import wavfile
+from python_speech_features import logfbank
 import shutil
 #from av_hubert.avhubert import utils as avhubert_utils
 import soundfile as sf
 import json
+import torch
 import torch.nn.functional as F
 from sklearn import metrics
 import argparse
+import av_hubert.avhubert  # noqa: F401
+
+avhubert_utils = importlib.import_module('av_hubert.avhubert.utils')
 
 
 def calc_cos_dist(feat1,feat2,vshift=15):
@@ -119,13 +124,19 @@ def evaluate_auc(args):
     max_length=args.max_length
 
     with open(file_list,'r') as f:
-        video_list=f.read().split('\n')
+        video_list=[line.strip() for line in f if line.strip()]
 
     outputs=[]
     labels=[]
+    skipped_malformed = 0
     for video_item in tqdm(video_list):
-        video_path=osp.join(video_root,video_item.split(' ')[0])
-        video_label=video_item.split(' ')[1]
+        parts = video_item.split()
+        if len(parts) < 2:
+            skipped_malformed += 1
+            continue
+
+        video_path=osp.join(video_root,parts[0])
+        video_label=parts[1]
         mouth_roi_path=video_path.replace(video_root,cropped_mouth_dir)
         wav_path=mouth_roi_path.replace('.mp4','.wav')
         if not  ((osp.exists(mouth_roi_path) and osp.exists(wav_path))):
@@ -135,6 +146,14 @@ def evaluate_auc(args):
 
         outputs.append(sim)
         labels.append(int(video_label))
+
+    if skipped_malformed > 0:
+        print(f'Skipped malformed file-list rows: {skipped_malformed}')
+
+    if len(outputs) == 0:
+        raise ValueError(
+            'No valid samples were evaluated. Check file_list format and that mouth/wav files exist under --mouth_dir.'
+        )
 
     outputs=np.asarray(outputs)
     labels=np.asarray(labels)
