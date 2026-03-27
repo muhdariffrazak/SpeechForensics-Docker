@@ -86,7 +86,7 @@ This is a PyTorch implementation of [SpeechForensics: Audio-Visual Speech Repres
    And put it to `checkpoints/large_vox_iter5.pt`.
 2. To evaluate on different datasets, run
    ```bash
-   python evaluation/evaluate.py --video_root $video_root --file_list $file_list --mouth_dir $cropped_mouth_dir
+   python evaluate.py --video_root $video_root --file_list $file_list --mouth_dir $cropped_mouth_dir
    ```
    The AUC scores of different forgery datasets are shown in below:
 
