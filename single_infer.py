@@ -1,135 +1,365 @@
+"""
+AV-HuBERT Speech Forensics Inference Script
+
+This script evaluates audio-visual synchronization for a single video using
+a pre-trained AV-HuBERT model. It requires cropped mouth videos and corresponding
+audio files.
+"""
+
 import argparse
+import logging
 import os
 import sys
-from argparse import Namespace
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional, Tuple
 
 import torch
 from av_hubert.fairseq.fairseq import checkpoint_utils
 import av_hubert.fairseq.fairseq.utils as fairseq_utils
 
-
-def ensure_avhubert_import_paths() -> None:
-    repo_root = os.path.dirname(os.path.abspath(__file__))
-    avhubert_root = os.path.join(repo_root, "av_hubert")
-    avhubert_pkg_dir = os.path.join(avhubert_root, "avhubert")
-
-    if avhubert_root not in sys.path:
-        sys.path.insert(0, avhubert_root)
-    if avhubert_pkg_dir not in sys.path:
-        sys.path.insert(0, avhubert_pkg_dir)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run single-video SpeechForensics inference",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument(
-        "--video_root",
-        type=str,
-        default=None,
-        help="README-style: video root dir",
-    )
-    parser.add_argument(
-        "--mouth_dir",
-        type=str,
-        default=None,
-        help="README-style: cropped mouth dir",
-    )
-    parser.add_argument(
-        "--video_path",
-        type=str,
-        required=True,
-        help="README-style: relative video path (same as first column in file_list)",
-    )
-    parser.add_argument(
-        "--checkpoint_path",
-        type=str,
-        default="checkpoints/large_vox_iter5.pt",
-        help="AV-HuBERT checkpoint path",
-    )
-    parser.add_argument(
-        "--max_length",
-        type=int,
-        default=50,
-        help="Maximum seconds consumed by model",
-    )
-    return parser.parse_args()
+@dataclass
+class ModelPaths:
+    """Container for model and data paths."""
+    checkpoint_path: Path
+    mouth_video_path: Path
+    audio_path: Path
 
 
-def resolve_input_paths(args: argparse.Namespace) -> tuple[str, str]:
-    if not args.video_root or not args.mouth_dir:
-        raise ValueError("--video_root and --mouth_dir are required.")
-
-    video_root = os.path.abspath(args.video_root)
-    mouth_dir = os.path.abspath(args.mouth_dir)
-
-    if os.path.isabs(args.video_path):
-        video_full = os.path.abspath(args.video_path)
-    else:
-        video_full = os.path.abspath(os.path.join(video_root, args.video_path))
-
-    if os.path.commonpath([video_root, video_full]) != video_root:
-        raise ValueError("--video_path must be under --video_root.")
-
-    relative_video_path = os.path.relpath(video_full, video_root)
-    mouth_path = os.path.abspath(os.path.join(mouth_dir, relative_video_path))
-    wav_path = os.path.splitext(mouth_path)[0] + ".wav"
-    return mouth_path, wav_path
+@dataclass
+class InferenceConfig:
+    """Configuration for inference."""
+    max_seconds: int = 50
+    use_gpu: bool = True
+    
+    def validate(self) -> None:
+        """Validate configuration parameters."""
+        if self.max_seconds <= 0:
+            raise ValueError(f"max_seconds must be positive, got {self.max_seconds}")
 
 
-def validate_inputs(mouth_path: str, wav_path: str, checkpoint_path: str) -> None:
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-    if not os.path.exists(mouth_path):
-        raise FileNotFoundError(f"Mouth video not found: {mouth_path}")
-    if not mouth_path.lower().endswith(".mp4"):
-        raise ValueError("Resolved mouth path must be an .mp4 file")
-    if not os.path.exists(wav_path):
-        raise FileNotFoundError(f"WAV not found: {wav_path}")
-    if not wav_path.lower().endswith(".wav"):
-        raise ValueError("Resolved WAV path must be a .wav file")
-    if not torch.cuda.is_available():
-        raise RuntimeError(
-            "CUDA is required by the current evaluate.py implementation (uses .cuda(0) internally)."
+class AVHubertModelLoader:
+    """Handles loading and preparation of AV-HuBERT models."""
+    
+    def __init__(self, checkpoint_path: Path):
+        self.checkpoint_path = checkpoint_path
+        self._validate_checkpoint()
+    
+    def _validate_checkpoint(self) -> None:
+        """Ensure checkpoint file exists."""
+        if not self.checkpoint_path.exists():
+            raise FileNotFoundError(
+                f"Checkpoint not found: {self.checkpoint_path}"
+            )
+    
+    @staticmethod
+    def _setup_user_modules() -> None:
+        """Import user modules for custom model architectures."""
+        fairseq_utils.import_user_module(
+            argparse.Namespace(user_dir=str(Path.cwd()))
         )
+    
+    def load(self) -> Tuple[torch.nn.Module, object]:
+        """
+        Load and prepare model for inference.
+        
+        Returns:
+            Tuple of (model, task) ready for evaluation
+        """
+        self._setup_user_modules()
+        
+        # Load model ensemble and task
+        models, saved_cfg, task = checkpoint_utils.load_model_ensemble_and_task(
+            [str(self.checkpoint_path)]
+        )
+        
+        # Extract the actual model (handle both pre-trained and fine-tuned)
+        model = self._extract_core_model(models[0])
+        
+        # Move to GPU if available
+        if torch.cuda.is_available():
+            model = model.cuda()
+            logger.info("Model moved to GPU")
+        else:
+            logger.warning("CUDA not available - using CPU (may be slow)")
+        
+        model.eval()
+        return model, task
+    
+    @staticmethod
+    def _extract_core_model(model: torch.nn.Module) -> torch.nn.Module:
+        """
+        Extract the core AV-HuBERT model from potential wrapper.
+        
+        Fine-tuned models have a decoder wrapper; pre-trained models don't.
+        """
+        if hasattr(model, "decoder"):
+            logger.info("Loaded fine-tuned model (extracting encoder)")
+            return model.encoder.w2v_model
+        else:
+            logger.info("Loaded pre-trained model")
+            return model
 
 
-def load_model(checkpoint_path: str):
-    fairseq_utils.import_user_module(Namespace(user_dir=os.getcwd()))
-    models, saved_cfg, task = checkpoint_utils.load_model_ensemble_and_task([checkpoint_path])
+class InputResolver:
+    """Handles input path resolution and validation."""
+    
+    def __init__(self, video_root: Path, mouth_dir: Path):
+        """
+        Initialize resolver with base directories.
+        
+        Args:
+            video_root: Root directory containing original videos
+            mouth_dir: Root directory containing cropped mouth videos
+        """
+        self.video_root = video_root.resolve()
+        self.mouth_dir = mouth_dir.resolve()
+        
+        self._validate_directories()
+    
+    def _validate_directories(self) -> None:
+        """Ensure base directories exist."""
+        if not self.video_root.exists():
+            raise FileNotFoundError(f"Video root not found: {self.video_root}")
+        if not self.mouth_dir.exists():
+            raise FileNotFoundError(f"Mouth directory not found: {self.mouth_dir}")
+    
+    def resolve_paths(self, video_path: str) -> ModelPaths:
+        """
+        Resolve full paths for mouth video and audio.
+        
+        Args:
+            video_path: Path to video (relative to video_root or absolute)
+            
+        Returns:
+            ModelPaths object with resolved file paths
+        """
+        video_full = self._resolve_video_full_path(video_path)
+        self._validate_video_location(video_full)
+        
+        relative_path = video_full.relative_to(self.video_root)
+        
+        mouth_path = self.mouth_dir / relative_path
+        audio_path = mouth_path.with_suffix(".wav")
+        
+        return ModelPaths(
+            checkpoint_path=Path(),  # Will be set later
+            mouth_video_path=mouth_path,
+            audio_path=audio_path
+        )
+    
+    def _resolve_video_full_path(self, video_path: str) -> Path:
+        """Resolve video path to absolute path."""
+        path = Path(video_path)
+        if path.is_absolute():
+            return path.resolve()
+        return (self.video_root / path).resolve()
+    
+    def _validate_video_location(self, video_full: Path) -> None:
+        """
+        Ensure video path is under video_root (security check).
+        
+        Raises:
+            ValueError: If video is outside video_root
+        """
+        try:
+            video_full.relative_to(self.video_root)
+        except ValueError:
+            raise ValueError(
+                f"Video path {video_full} is not under video root {self.video_root}"
+            )
+    
+    @staticmethod
+    def validate_input_files(paths: ModelPaths) -> None:
+        """Validate that all required input files exist."""
+        if not paths.mouth_video_path.exists():
+            raise FileNotFoundError(
+                f"Mouth video not found: {paths.mouth_video_path}"
+            )
+        
+        if not paths.audio_path.exists():
+            raise FileNotFoundError(
+                f"Audio file not found: {paths.audio_path}"
+            )
+        
+        # Validate file extensions
+        if paths.mouth_video_path.suffix.lower() != ".mp4":
+            raise ValueError(
+                f"Mouth video must be MP4 format: {paths.mouth_video_path}"
+            )
+        
+        if paths.audio_path.suffix.lower() != ".wav":
+            raise ValueError(
+                f"Audio must be WAV format: {paths.audio_path}"
+            )
 
-    model = models[0]
-    if hasattr(models[0], "decoder"):
-        print("Checkpoint: fine-tuned")
-        model = models[0].encoder.w2v_model
-    else:
-        print("Checkpoint: pre-trained w/o fine-tuning")
 
-    model = model.cuda().eval()
-    return model, task
+class InferenceEngine:
+    """Handles the actual inference process."""
+    
+    def __init__(self, evaluate_module, config: InferenceConfig):
+        """
+        Initialize inference engine.
+        
+        Args:
+            evaluate_module: The evaluate module from av_hubert
+            config: Inference configuration
+        """
+        self.evaluate = evaluate_module
+        self.config = config
+    
+    def compute_sync_score(
+        self, 
+        paths: ModelPaths, 
+        model: torch.nn.Module, 
+        task: object
+    ) -> float:
+        """
+        Compute audio-visual synchronization score.
+        
+        Args:
+            paths: ModelPaths containing mouth video and audio paths
+            model: Loaded AV-HuBERT model
+            task: Fairseq task object
+            
+        Returns:
+            Float score (higher = better synchronization)
+        """
+        # Configure evaluate module (uses module-level globals)
+        self.evaluate.model = model
+        self.evaluate.task = task
+        
+        logger.info("Computing AV sync score...")
+        score = self.evaluate.evaluate_audio_visual_feature(
+            str(paths.mouth_video_path),
+            str(paths.audio_path),
+            max_length=self.config.max_seconds
+        )
+        
+        return score
+
+
+class ArgumentParser:
+    """Handles command-line argument parsing."""
+    
+    @staticmethod
+    def parse() -> argparse.Namespace:
+        """Parse command-line arguments."""
+        parser = argparse.ArgumentParser(
+            description="Run single-video SpeechForensics inference",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        
+        # Input directories
+        parser.add_argument(
+            "--video_root",
+            type=str,
+            required=True,
+            help="Root directory containing original videos",
+        )
+        parser.add_argument(
+            "--mouth_dir",
+            type=str,
+            required=True,
+            help="Root directory containing cropped mouth videos",
+        )
+        
+        # Video specification
+        parser.add_argument(
+            "--video_path",
+            type=str,
+            required=True,
+            help="Path to video (relative to video_root or absolute)",
+        )
+        
+        # Model configuration
+        parser.add_argument(
+            "--checkpoint_path",
+            type=str,
+            default="checkpoints/large_vox_iter5.pt",
+            help="AV-HuBERT checkpoint path",
+        )
+        parser.add_argument(
+            "--max_seconds",
+            type=int,
+            default=50,
+            help="Maximum video duration in seconds to process",
+        )
+        
+        return parser.parse_args()
+
+
+def setup_import_paths() -> None:
+    """Add AV-HuBERT modules to Python path."""
+    repo_root = Path(__file__).parent.resolve()
+    avhubert_root = repo_root / "av_hubert"
+    avhubert_pkg_dir = avhubert_root / "avhubert"
+    
+    # Add to path if not already present
+    for path in [avhubert_root, avhubert_pkg_dir]:
+        path_str = str(path)
+        if path_str not in sys.path:
+            sys.path.insert(0, path_str)
+            logger.debug(f"Added to sys.path: {path_str}")
 
 
 def main() -> None:
-    args = parse_args()
-    ensure_avhubert_import_paths()
-
-    import evaluate
-
-    mouth_path, wav_path = resolve_input_paths(args)
-
-    validate_inputs(mouth_path, wav_path, args.checkpoint_path)
-
-    model, task = load_model(args.checkpoint_path)
-
-    # evaluate.py uses module-level globals for model and task.
-    evaluate.model = model
-    evaluate.task = task
-
-    score = evaluate.evaluate_audio_visual_feature(mouth_path, wav_path, max_length=args.max_length)
-    print(f"Mouth video: {mouth_path}")
-    print(f"WAV audio : {wav_path}")
-    print(f"AV sync score: {score:.6f}")
+    """Main execution function."""
+    try:
+        # Parse arguments
+        args = ArgumentParser.parse()
+        
+        # Setup environment
+        setup_import_paths()
+        
+        # Import evaluate module (must happen after path setup)
+        import evaluate
+        
+        # Create configuration
+        config = InferenceConfig(max_seconds=args.max_seconds)
+        config.validate()
+        
+        # Setup input resolver
+        resolver = InputResolver(
+            video_root=Path(args.video_root),
+            mouth_dir=Path(args.mouth_dir)
+        )
+        
+        # Resolve input paths
+        paths = resolver.resolve_paths(args.video_path)
+        paths.checkpoint_path = Path(args.checkpoint_path)
+        
+        # Validate inputs
+        resolver.validate_input_files(paths)
+        
+        # Load model
+        logger.info(f"Loading model from {paths.checkpoint_path}")
+        loader = AVHubertModelLoader(paths.checkpoint_path)
+        model, task = loader.load()
+        
+        # Run inference
+        engine = InferenceEngine(evaluate, config)
+        score = engine.compute_sync_score(paths, model, task)
+        
+        # Output results
+        logger.info("=" * 50)
+        logger.info("Inference Results:")
+        logger.info(f"Mouth video: {paths.mouth_video_path}")
+        logger.info(f"Audio file: {paths.audio_path}")
+        logger.info(f"AV sync score: {score:.6f}")
+        logger.info("=" * 50)
+        
+    except Exception as e:
+        logger.error(f"Error during inference: {e}", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
