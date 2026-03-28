@@ -93,3 +93,34 @@ This is a PyTorch implementation of [SpeechForensics: Audio-Visual Speech Repres
    | FaceForensic++ | FakeAVCeleb | KoDF |
    | :------------: | :-------------: | :-------------: |
    | 97.6% | 99.0% | 91.7% |
+
+## Single Video Inference
+Use `single_infer.py` to compute the AV synchronization score for one video.
+
+```bash
+python single_infer.py \
+   --video_root $video_root \
+   --mouth_dir $cropped_mouth_dir \
+   --video_path $video_path
+```
+
+Example:
+
+```bash
+python single_infer.py \
+   --video_root data/datasets/FaceForensics/c23/Deepfakes/videos \
+   --mouth_dir data/cropped_mouth/FaceForensics/c23/Deepfakes/videos \
+   --video_path 000.mp4 \
+   --checkpoint_path checkpoints/large_vox_iter5.pt \
+   --max_seconds 50
+```
+
+Arguments:
+- `--video_root`: Root directory containing the original videos.
+- `--mouth_dir`: Root directory containing cropped mouth videos and corresponding `.wav` files.
+- `--video_path`: Video path relative to `video_root` (or an absolute path under `video_root`).
+- `--checkpoint_path`: Path to the AV-HuBERT checkpoint. Default is `checkpoints/large_vox_iter5.pt`.
+- `--max_seconds`: Maximum video duration to process. Default is `50`.
+
+Output:
+- Prints the resolved mouth video path, audio path, and final AV sync score (`higher = better synchronization`).
