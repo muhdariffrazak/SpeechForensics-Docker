@@ -122,5 +122,9 @@ Arguments:
 - `--checkpoint_path`: Path to the AV-HuBERT checkpoint. Default is `checkpoints/large_vox_iter5.pt`.
 - `--max_seconds`: Maximum video duration to process. Default is `50`.
 
+Note for Windows users:
+- If your files use uppercase extensions (for example, `.MP4`), pass `--video_path` using the exact case on disk (for example, `video1.MP4`).
+- Keep video and cropped-mouth filenames/extensions consistent so the script can correctly locate paired `.wav` files.
+
 Output:
 - Prints the resolved mouth video path, audio path, and final AV sync score (`higher = better synchronization`).
