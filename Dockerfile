@@ -13,6 +13,7 @@ ENV LC_ALL=C.UTF-8 \
 ARG UID=1000
 ARG GID=1000
 ARG USERNAME=appuser
+ARG DOWNLOAD_WEIGHTS=1
 
 WORKDIR /workspace
 COPY requirements.txt /tmp/requirements.txt
@@ -34,7 +35,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 RUN ln -sf /usr/bin/python3 /usr/local/bin/python && \
-    python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+    python -m pip install --no-cache-dir "pip<24.1" setuptools wheel
 
 # Install PyTorch CUDA 11.8 wheels first as instructed in README.
 RUN python -m pip install --no-cache-dir \
@@ -62,11 +63,14 @@ RUN cp -r modification/retinaface preprocessing/face-alignment/face_alignment/de
 # DOWNLOAD MODEL CHECKPOINTS
 # ============================================================================
 # gdown is more reliable for Google Drive in non-interactive builds.
-RUN python -m pip install --no-cache-dir gdown && \
-    mkdir -p checkpoints && \
-    gdown "https://drive.google.com/uc?id=1oZRSG0ZegbVkVwUd8wUIQx8W7yfZ_ki1" -O checkpoints/Resnet50_Final.pth && \
-    wget -q --show-progress -O checkpoints/large_vox_iter5.pt \
-    https://dl.fbaipublicfiles.com/avhubert/model/lrs3_vox/clean-pretrain/large_vox_iter5.pt
+RUN mkdir -p checkpoints && \
+    if [ "${DOWNLOAD_WEIGHTS}" = "1" ]; then \
+        python -m pip install --no-cache-dir gdown && \
+        [ -f checkpoints/Resnet50_Final.pth ] || gdown "https://drive.google.com/uc?id=1oZRSG0ZegbVkVwUd8wUIQx8W7yfZ_ki1" -O checkpoints/Resnet50_Final.pth && \
+        [ -f checkpoints/large_vox_iter5.pt ] || wget -q --show-progress -O checkpoints/large_vox_iter5.pt https://dl.fbaipublicfiles.com/avhubert/model/lrs3_vox/clean-pretrain/large_vox_iter5.pt; \
+    else \
+        echo "Skipping weight download (DOWNLOAD_WEIGHTS=${DOWNLOAD_WEIGHTS})"; \
+    fi
 
 # Create a non-root runtime user.
 RUN if ! getent group "${GID}" >/dev/null; then groupadd -g "${GID}" "${USERNAME}"; fi && \

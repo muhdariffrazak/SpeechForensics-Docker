@@ -1,5 +1,5 @@
 services:
-  temporal-latentsync-chatterbox:
+  speechforensics-docker:
     image: speechforensics-docker
     container_name: speechforensics-docker
     build:
@@ -9,6 +9,7 @@ services:
         UID: ${UID:-1000}
         GID: ${GID:-1000}
         USERNAME: ${USERNAME:-appuser}
+        DOWNLOAD_WEIGHTS: ${DOWNLOAD_WEIGHTS:-0}
     stdin_open: true
     tty: true
     pull_policy: if_not_present
