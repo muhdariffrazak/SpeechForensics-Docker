@@ -82,17 +82,37 @@ This is a PyTorch implementation of [SpeechForensics: Audio-Visual Speech Repres
 
 
 ## Evaluate
-1. Download the pretrained Audio-Visual Speech Representation model [here](https://dl.fbaipublicfiles.com/avhubert/model/lrs3_vox/clean-pretrain/large_vox_iter5.pt).
-   And put it to `checkpoints/large_vox_iter5.pt`.
-2. To evaluate on different datasets, run
+
+### Overview
+The evaluation script tests the Audio-Visual Speech Representation model on three major face forgery datasets to measure its deepfake detection performance. The model evaluates synchronization between mouth movements (visual) and audio speech to distinguish real videos from deepfakes.
+
+### Supported Datasets
+- **FaceForensics++**: A comprehensive deepfake detection benchmark
+- **FakeAVCeleb**: An audio-visual deepfake dataset  
+- **KoDF**: Korean deepfake video dataset
+
+### Performance
+The model achieves the following AUC (Area Under the Curve) scores:
+
+| FaceForensics++ | FakeAVCeleb | KoDF |
+| :------------: | :-------------: | :-------------: |
+| 97.6% | 99.0% | 91.7% |
+
+### How to Run
+
+1. Download the pretrained Audio-Visual Speech Representation model [here](https://dl.fbaipublicfiles.com/avhubert/model/lrs3_vox/clean-pretrain/large_vox_iter5.pt) and place it at `checkpoints/large_vox_iter5.pt`.
+
+2. To evaluate on different datasets, run:
    ```bash
    python evaluate.py --video_root $video_root --file_list $file_list --mouth_dir $cropped_mouth_dir
    ```
-   The AUC scores of different forgery datasets are shown in below:
-
-   | FaceForensic++ | FakeAVCeleb | KoDF |
-   | :------------: | :-------------: | :-------------: |
-   | 97.6% | 99.0% | 91.7% |
+   
+   **Arguments:**
+   - `--video_root`: Root directory containing the original video files
+   - `--file_list`: Text file listing the names of videos to evaluate
+   - `--mouth_dir`: Directory containing pre-processed cropped mouth regions extracted from videos
+   - `--checkpoint_path`: Path to the AV-HuBERT checkpoint (default: `checkpoints/large_vox_iter5.pt`)
+   - `--max_length`: Maximum video duration in seconds to process (default: 50)
 
 ## Single Video Inference
 Use `single_infer.py` to compute the AV synchronization score for one video.
