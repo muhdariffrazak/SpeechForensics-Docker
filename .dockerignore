@@ -1,0 +1,23 @@
+.git
+.gitmodules
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.tmp
+
+# Avoid sending large local assets to Docker build context.
+data
+docs/images
+
+# We download checkpoints during image build.
+checkpoints/*.pt
+checkpoints/*.pth
+checkpoints/*.Identifier
+
+# Local editor / OS noise
+.vscode
+.DS_Store

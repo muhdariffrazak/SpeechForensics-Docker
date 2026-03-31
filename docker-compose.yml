@@ -1,0 +1,23 @@
+services:
+  temporal-latentsync-chatterbox:
+    image: speechforensics-docker
+    container_name: speechforensics-docker
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+        USERNAME: ${USERNAME:-appuser}
+    stdin_open: true
+    tty: true
+    pull_policy: if_not_present
+    working_dir: /workspace
+    command: bash
+    volumes:
+      - .:/workspace
+      - /home/muhd_ariff/Documents/Intern/Datasets:/data
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-${ID0:-all}}}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-${ID0:-0}}
+    gpus: all

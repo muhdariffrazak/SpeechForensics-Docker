@@ -27,6 +27,8 @@ from sklearn import metrics
 import argparse
 import av_hubert.avhubert  # noqa: F401
 
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
 avhubert_utils = importlib.import_module('av_hubert.avhubert.utils')
 
 
@@ -58,7 +60,7 @@ def extract_visual_feature(video_path,max_length):
         frames=frames[:int(fps*max_length)]
 
     frames = transform(frames)
-    frames = torch.FloatTensor(frames).unsqueeze(dim=0).unsqueeze(dim=0).cuda(0)
+    frames = torch.FloatTensor(frames).unsqueeze(dim=0).unsqueeze(dim=0).to(device)
     with torch.no_grad():
         feature, _, = model.extract_finetune(source={'video': frames, 'audio': None}, padding_mask=None, output_layer=None)
         feature = feature.squeeze(dim=0)
@@ -86,7 +88,7 @@ def extract_audio_feature(audio_path):
     assert sample_rate == 16_000 and len(wav_data.shape) == 1
     audio_feats = logfbank(wav_data, samplerate = sample_rate).astype(np.float32)  # [T, F]
     audio_feats = stacker(audio_feats, 4)
-    audio_feats=torch.FloatTensor(audio_feats).cuda(0)
+    audio_feats=torch.FloatTensor(audio_feats).to(device)
     with torch.no_grad():
         audio_feats = F.layer_norm(audio_feats, audio_feats.shape[1:])
     audio_feats=audio_feats.transpose(0,1).unsqueeze(dim=0)
@@ -183,7 +185,7 @@ if __name__=='__main__':
         model = models[0].encoder.w2v_model
     else:
         print(f"Checkpoint: pre-trained w/o fine-tuning")
-    model.cuda()
+    model = model.to(device)
     model.eval()
 
     evaluate_auc(args)
